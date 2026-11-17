@@ -1,0 +1,1 @@
+ALTER TABLE `payments` ADD `deposit_change` integer DEFAULT 0 NOT NULL;
