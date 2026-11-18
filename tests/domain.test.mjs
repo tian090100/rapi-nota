@@ -43,6 +43,7 @@ test('photo menu has 7 categories and 24 variants with exact express prices', as
  assert.equal(SERVICES.find(s=>s.id==='formal-suit').unit,'set');
  assert.equal(estimatedHours([{serviceId:'wash-3h'},{serviceId:'iron-4h'}]),4);
  assert.equal(estimatedHours([{serviceId:'wash-3h'},{serviceId:'bed'}]),null);
+ assert.equal(estimatedHours([]),null);
  assert.equal(nextStatus({items:[{serviceId:'iron-4h'}],status:'Diterima'}),'Disetrika');
  assert.equal(nextStatus({items:[{serviceId:'fold-4h'}],status:'Dikeringkan'}),'Siap Diambil');
  assert.throws(()=>validateOrder({...input(),items:[{serviceId:'formal-suit',quantity:1.5}]}));

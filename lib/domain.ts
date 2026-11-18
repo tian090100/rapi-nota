@@ -34,7 +34,7 @@ export const SERVICES:Service[] = [
  {id:'home-fleece',group:'home',variant:'Selimut tipis / Fleece',unit:'pcs',price:14000,hours:null,flow:'wash'},
  {id:'home-blanket',group:'home',variant:'Selimut tebal',unit:'pcs',price:24000,hours:null,flow:'wash'},
 ].map(s=>({...s,name:SERVICE_GROUPS.find(g=>g.id===s.group)!.name+' — '+s.variant})) as Service[];
-export function estimatedHours(items:{serviceId:string}[]){const services=items.map(i=>SERVICES.find(s=>s.id===i.serviceId));return services.some(s=>!s||s.hours===null)?null:Math.max(...services.map(s=>s!.hours!));}
+export function estimatedHours(items:{serviceId:string}[]){if(!items.length)return null;const services=items.map(i=>SERVICES.find(s=>s.id===i.serviceId));return services.some(s=>!s||s.hours===null)?null:Math.max(...services.map(s=>s!.hours!));}
 export const STATUSES = ['Diterima','Dicuci','Dikeringkan','Disetrika','Siap Diambil','Selesai'];
 export const METHODS = ['Tunai','Transfer','QRIS'];
 export const CUSTOM_SERVICE_ID = 'custom';
