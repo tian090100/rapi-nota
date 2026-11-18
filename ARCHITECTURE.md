@@ -43,7 +43,7 @@ Cloudflare D1 (SQLite) ◀──── drizzle-orm / prepared statements ──�
 ## 3. Model Data (D1)
 
 Migrasi (urut): `0000` (orders/payments/expenses) → `0001` (akun/sesi/rate-limit) →
-`0002` (customers) → `0003` (`payments.deposit_change`).
+`0002` (customers) → `0003` (`payments.deposit_change`) → `0004` (indeks kolom panas).
 
 - **orders**: `id`, `number` (unik, `RN-YYYYMMDD-NNN`), `customer`, `phone`, `items`
   (JSON snapshot), `total`, `discount`, `extra`, `status`, `due`, `created`, `notes`,
@@ -81,7 +81,9 @@ Endpoint lain:
 - `GET /api/receipts/[id]` — PDF nota (80/58 mm) atau label keranjang.
 
 Setiap mutasi sukses mengembalikan **snapshot penuh** terbaru, dan klien mengganti
-seluruh state — sederhana, tapi boros saat data besar.
+seluruh state — sederhana, tapi boros saat data besar. `snapshot()` mengelompokkan
+payments ke order lewat satu `Map` (bukan memfilter seluruh array per order), dan
+kolom yang sering diurutkan/di-join sudah berindeks.
 
 ## 5. Keamanan
 
@@ -165,9 +167,19 @@ Sudah dibereskan:
    nominal 2 desimal, sedangkan `validateOrder` (create) membulatkan ke rupiah. Sekarang
    keduanya memakai `amount()` (integer rupiah) dan `Math.round(quantity*price)`, sesuai
    `README.md` dan tipe kolom `integer` di skema.
+8. **`snapshot()` lebih efisien** — dulu memfilter seluruh array payments untuk setiap
+   order (O(order×payment)); kini payments dikelompokkan sekali lewat `Map`
+   (O(order+payment)). Ditambah indeks DB untuk kolom panas (`orders.created`,
+   `orders.phone`, `payments.order_id`, `payments.created`, `expenses.created`) lewat
+   migrasi `0004`.
 
 Masih terbuka:
 4. **Migrasi berisi data uji**: `drizzle/0002_milky_king_cobra.sql` menghapus 3 order ID
    hardcoded. Dibiarkan (sudah pernah diterapkan); jangan diedit — bila perlu bersihkan,
    buat migrasi baru. Berbahaya bila dijalankan di database lain.
-5. **Tanpa paginasi**: `snapshot()` memuat seluruh orders + payments tiap request.
+5. **Tanpa paginasi (sengaja ditunda)**: `snapshot()` masih memuat seluruh orders +
+   payments tiap request. Klien memang butuh data penuh — keuangan menghitung piutang dari
+   semua order, sedangkan halaman pelanggan dan dashboard mengagregasi semua order. Jadi
+   paginasi server-side berarti memindahkan agregasi itu ke server (redesain 4 tampilan),
+   belum sepadan untuk skala satu cabang. Bila volume tumbuh, mulai dari endpoint ringkasan
+   + paging khusus daftar pesanan.

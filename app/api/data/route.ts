@@ -32,7 +32,9 @@ type RequestBody={action?:string;id:string;orderId:string;history?:string;amount
 async function snapshot(role:string){
  const db=env.DB!;
  const [os,ps,es,cs]=await db.batch([db.prepare(`SELECT o.*, CASE WHEN o.phone<>'' THEN (${depositBalance}) ELSE 0 END AS deposit FROM orders o ORDER BY created DESC`),db.prepare('SELECT * FROM payments ORDER BY created'),db.prepare(canViewFinance(role)?'SELECT * FROM expenses ORDER BY created DESC':'SELECT * FROM expenses WHERE 0'),db.prepare(`SELECT o.id,o.name,o.phone,(${depositBalance}) AS deposit FROM customers o ORDER BY name`)]);
- return {orders:os.results.map(value=>{const o=value as OrderRow;const payments=ps.results.filter(item=>(item as PaymentRow).order_id===o.id).map(item=>{const {order_id,...rest}=item as PaymentRow;return {...rest,orderId:order_id};});return {...o,items:JSON.parse(o.items),history:JSON.parse(o.history),payments,paid:payments.reduce((sum,p)=>sum+p.amount,0)};}),expenses:es.results,customers:cs.results};
+ const paymentsByOrder=new Map<string,PaymentRow[]>();
+ for(const item of ps.results as PaymentRow[]){const list=paymentsByOrder.get(item.order_id);if(list)list.push(item);else paymentsByOrder.set(item.order_id,[item]);}
+ return {orders:os.results.map(value=>{const o=value as OrderRow;const payments=(paymentsByOrder.get(o.id)??[]).map(item=>{const {order_id,...rest}=item;return {...rest,orderId:order_id};});return {...o,items:JSON.parse(o.items),history:JSON.parse(o.history),payments,paid:payments.reduce((sum,p)=>sum+p.amount,0)};}),expenses:es.results,customers:cs.results};
 }
 export async function GET(){
  try{const u=await getSession();if(!u)return json({error:'Silakan masuk terlebih dahulu.'},401);return json(await snapshot(u.role));}
