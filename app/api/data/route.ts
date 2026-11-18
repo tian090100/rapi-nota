@@ -25,20 +25,24 @@ function recordPayment(db:D1Database, orderId:string, paymentId:string, received
   ON CONFLICT(id) DO NOTHING`).bind(paymentId,received,method,created,actor,Number(saveChange),received,orderId,Number(saveChange));
 }
 
+type OrderRow={id:string;items:string;history:string;total:number;phone:string;created:string};
+type PaymentRow={id:string;order_id:string;amount:number;method:string;created:string;actor:string};
+type StatusRow={id:string;items:string;history:string;status:string;total:number};
+type RequestBody={action?:string;id:string;orderId:string;history?:string;amount?:unknown;method?:unknown;saveChange?:unknown;status?:string;category?:unknown;note?:unknown;customer?:unknown;phone?:unknown;items?:unknown;extra?:unknown;discount?:unknown;paid?:unknown;due?:unknown;packages?:unknown;notes?:unknown};
 async function snapshot(role:string){
  const db=env.DB!;
  const [os,ps,es,cs]=await db.batch([db.prepare(`SELECT o.*, CASE WHEN o.phone<>'' THEN (${depositBalance}) ELSE 0 END AS deposit FROM orders o ORDER BY created DESC`),db.prepare('SELECT * FROM payments ORDER BY created'),db.prepare(canViewFinance(role)?'SELECT * FROM expenses ORDER BY created DESC':'SELECT * FROM expenses WHERE 0'),db.prepare(`SELECT o.id,o.name,o.phone,(${depositBalance}) AS deposit FROM customers o ORDER BY name`)]);
- return {orders:os.results.map((o:any)=>{const payments=ps.results.filter((p:any)=>p.order_id===o.id).map((p:any)=>({...p,orderId:p.order_id}));return {...o,items:JSON.parse(o.items),history:JSON.parse(o.history),payments,paid:payments.reduce((a:number,p:any)=>a+p.amount,0)};}),expenses:es.results,customers:cs.results};
+ return {orders:os.results.map(value=>{const o=value as OrderRow;const payments=ps.results.filter(item=>(item as PaymentRow).order_id===o.id).map(item=>{const {order_id,...rest}=item as PaymentRow;return {...rest,orderId:order_id};});return {...o,items:JSON.parse(o.items),history:JSON.parse(o.history),payments,paid:payments.reduce((sum,p)=>sum+p.amount,0)};}),expenses:es.results,customers:cs.results};
 }
-export async function GET(request:Request){
- try{const u=await getSession();if(!u)return json({error:'Silakan masuk terlebih dahulu.'},401);if(new URL(request.url).searchParams.get('scope')==='finance'&&!canViewFinance(u.role))return json({error:'Akses keuangan hanya untuk owner.'},403);return json(await snapshot(u.role));}
+export async function GET(){
+ try{const u=await getSession();if(!u)return json({error:'Silakan masuk terlebih dahulu.'},401);return json(await snapshot(u.role));}
  catch(e){console.error('Read failed',e);return json({error:'Data belum dapat dimuat. Coba lagi sebentar.'},500);}
 }
 export async function POST(request:Request){
  try{
  const u=await getSession();if(!u)return json({error:'Silakan masuk terlebih dahulu.'},401);
  if(request.headers.get('origin')!==new URL(request.url).origin)return json({error:'Permintaan tidak diizinkan.'},403);
- const b:any=await request.json(); if(!b||typeof b!=='object'||Array.isArray(b))throw Error('Permintaan tidak valid.'); const db=env.DB!,now=new Date().toISOString(),actor=u.name;
+ const b=await request.json() as RequestBody; if(!b||typeof b!=='object'||Array.isArray(b))throw Error('Permintaan tidak valid.'); const db=env.DB!,now=new Date().toISOString(),actor=u.name;
  if(!canPerform(u.role,b.action))return json({error:'Akses ini hanya tersedia untuk owner.'},403);
  if(typeof b.id!=='string'||!/^[-a-zA-Z0-9]{16,80}$/.test(b.id))throw Error('Identitas transaksi tidak valid. Muat ulang halaman.');
  if(b.action==='create'){
@@ -82,7 +86,7 @@ export async function POST(request:Request){
  }
  else if(b.action==='payment'){
   const n=Number(b.amount);
-  if(!Number.isFinite(n)||n<=0||n>100000000||Math.abs(n*100-Math.round(n*100))>0.00001||!METHODS.includes(b.method))throw Error('Isi nominal dan metode pembayaran yang valid.');
+  if(!Number.isFinite(n)||n<=0||n>100000000||Math.abs(n*100-Math.round(n*100))>0.00001||typeof b.method!=='string'||!METHODS.includes(b.method))throw Error('Isi nominal dan metode pembayaran yang valid.');
   const existing=await db.prepare('SELECT id FROM payments WHERE id=?').bind(b.id).first();
   if(!existing){
    const r=await recordPayment(db,b.orderId,b.id,n,b.method,b.saveChange===true,now,actor).run();
@@ -90,14 +94,14 @@ export async function POST(request:Request){
   }
  }
  else if(b.action==='status'){
-  const o:any=await db.prepare('SELECT * FROM orders WHERE id=?').bind(b.orderId).first();if(!o)throw Error('Pesanan tidak ditemukan.');
-  o.items=JSON.parse(o.items);const next=nextStatus(o);if(!next||next!==b.status)throw Error('Tahapan pesanan sudah berubah. Muat ulang data.');
+  const o=await db.prepare('SELECT * FROM orders WHERE id=?').bind(b.orderId).first<StatusRow>();if(!o)throw Error('Pesanan tidak ditemukan.');
+  const parsed={...o,items:JSON.parse(o.items)};const next=nextStatus(parsed);if(!next||next!==b.status)throw Error('Tahapan pesanan sudah berubah. Muat ulang data.');
   const history=[...JSON.parse(o.history),{status:next,at:now,actor}];
   const r=await db.prepare('UPDATE orders SET status=?,history=? WHERE id=? AND status=? AND (? != ? OR total <= (SELECT COALESCE(SUM(amount),0) FROM payments WHERE order_id=orders.id))').bind(next,JSON.stringify(history),o.id,o.status,next,'Selesai').run();
   if(!r.meta.changes)throw Error('Lunasi pembayaran sebelum menyerahkan cucian, atau muat ulang jika status berubah.');
  }
  else if(b.action==='expense'){
-  const n=amount(b.amount);if(!n||!['Deterjen','Pewangi','Air','Listrik','Gaji','Sewa','Kemasan','Perawatan','Lainnya'].includes(b.category))throw Error('Isi kategori dan nominal pengeluaran.');
+  const n=amount(b.amount);if(!n||typeof b.category!=='string'||!['Deterjen','Pewangi','Air','Listrik','Gaji','Sewa','Kemasan','Perawatan','Lainnya'].includes(b.category))throw Error('Isi kategori dan nominal pengeluaran.');
   await db.prepare('INSERT INTO expenses (id,category,amount,note,created,actor) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(b.id,b.category,n,String(b.note??'').slice(0,300),now,actor).run();
  }
  else throw Error('Aksi tidak dikenali.');

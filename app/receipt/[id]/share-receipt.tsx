@@ -27,14 +27,14 @@ export default function ShareReceipt({ orderId, phone, customer, number, initial
 
   useEffect(() => {
     if (!open || !recipient) return;
-    if (!navigator.share || !navigator.canShare) {
-      setStatus('manual');
-      return;
-    }
     const controller = new AbortController();
-    setStatus('loading');
-    setFile(null);
     async function loadPdf() {
+      if (!navigator.share || !navigator.canShare) {
+        setStatus('manual');
+        return;
+      }
+      setStatus('loading');
+      setFile(null);
       try {
         const response = await fetch(pdf, { signal: controller.signal, cache: 'no-store' });
         if (!response.ok || !response.headers.get('content-type')?.startsWith('application/pdf')) {

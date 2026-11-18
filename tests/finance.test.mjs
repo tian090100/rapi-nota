@@ -24,6 +24,8 @@ test('historical cash, carryover receivables and Excel reconcile using laundry s
   }
   const orders = db.prepare('SELECT * FROM orders').all().map(order => ({
     ...order,
+    items: JSON.parse(order.items),
+    history: JSON.parse(order.history),
     payments: db.prepare('SELECT * FROM payments WHERE order_id = ?').all(order.id),
   }));
   const expenses = db.prepare('SELECT * FROM expenses').all();

@@ -6,7 +6,7 @@ import { editOrderDetails, money, type Order } from '@/lib/domain';
 export default function OrderEditor({order, busy, onSave, onCancel}: {
   order: Order;
   busy: boolean;
-  onSave: (data: unknown) => Promise<unknown>;
+  onSave: (data: Record<string, unknown>) => Promise<unknown>;
   onCancel: () => void;
 }) {
   const [history] = useState(() => JSON.stringify(order.history));
@@ -46,7 +46,7 @@ export default function OrderEditor({order, busy, onSave, onCancel}: {
             <label>Jumlah<input required type="number" min="0.001" max="1000" step="0.001" value={item.quantity} onChange={e=>change('quantity',e.target.value)}/></label>
             <label>Satuan<input required maxLength={20} value={item.unit} onChange={e=>change('unit',e.target.value)}/></label>
           </div>
-          <label>Harga per satuan (Rp)<input required type="number" min="0" max="100000000" step="0.01" value={item.price} onChange={e=>change('price',e.target.value)}/></label>
+          <label>Harga per satuan (Rp)<input required type="number" min="0" max="100000000" step="1" value={item.price} onChange={e=>change('price',e.target.value)}/></label>
           <button type="button" className="text-btn" disabled={items.length===1} onClick={()=>setItems(items.filter(line=>line.key!==item.key))}>Hapus layanan</button>
         </fieldset>;
       })}
@@ -55,8 +55,8 @@ export default function OrderEditor({order, busy, onSave, onCancel}: {
         Tambah layanan
       </button>
       <div className="form-grid">
-        <label>Biaya tambahan (Rp)<input type="number" min="0" step="0.01" value={extra} onChange={e=>setExtra(e.target.value)}/></label>
-        <label>Diskon (Rp)<input type="number" min="0" step="0.01" value={discount} onChange={e=>setDiscount(e.target.value)}/></label>
+        <label>Biaya tambahan (Rp)<input type="number" min="0" step="1" value={extra} onChange={e=>setExtra(e.target.value)}/></label>
+        <label>Diskon (Rp)<input type="number" min="0" step="1" value={discount} onChange={e=>setDiscount(e.target.value)}/></label>
       </div>
       <label>Catatan cucian<textarea maxLength={500} value={notes} onChange={e=>setNotes(e.target.value)}/></label>
     </fieldset>

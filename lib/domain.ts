@@ -47,15 +47,19 @@ export type Customer = {id:string;name:string;phone:string|null;deposit?:number}
 export const money=(n:number)=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n);
 export const day=(iso:string)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(iso));
 export const dateTime=(iso:string)=>new Intl.DateTimeFormat('id-ID',{timeZone:'Asia/Jakarta',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(iso));
-export function validateOrder(input:any) {
+type DraftItem={serviceId?:unknown;name?:unknown;unit?:unknown;quantity?:unknown;price?:unknown};
+export type OrderInput={customer?:unknown;phone?:unknown;items?:unknown;extra?:unknown;discount?:unknown;paid?:unknown;method?:unknown;due?:unknown;packages?:unknown;notes?:unknown};
+type EditLine={originalIndex?:unknown;name?:unknown;unit?:unknown;quantity?:unknown;price?:unknown};
+export type EditInput={items?:unknown;extra?:unknown;discount?:unknown;notes?:unknown};
+export function validateOrder(input:OrderInput) {
  if(typeof input.customer!=='string'||!input.customer.trim()||input.customer.length>100) throw Error('Isi nama pelanggan (maksimal 100 karakter).');
  const phone=String(input.phone??'').replace(/[\s()+-]/g,'').replace(/^0/,'62');
  if(!/^62\d{8,13}$/.test(phone)) throw Error('Nomor WhatsApp Indonesia tidak valid.');
  if(!Array.isArray(input.items)||!input.items.length||input.items.length>20) throw Error('Tambahkan minimal satu layanan.');
- const items:Item[]=input.items.map((i:any)=>{
+ const items:Item[]=input.items.map((i:DraftItem)=>{
   const custom=i?.serviceId===CUSTOM_SERVICE_ID;
   const s=custom
-   ? {id:CUSTOM_SERVICE_ID,name:typeof i.name==='string'?i.name.trim():'',unit:i.unit,price:amount(i.price)}
+   ? {id:CUSTOM_SERVICE_ID,name:typeof i.name==='string'?i.name.trim():'',unit:typeof i.unit==='string'?i.unit:'',price:amount(i.price)}
    : SERVICES.find(s=>s.id===i?.serviceId);
   if(custom&&(!s?.name||s.name.length>100||!CUSTOM_UNITS.includes(s.unit)||s.price<=0)){
    throw Error('Isi nama, satuan, dan harga per satuan layanan custom.');
@@ -68,43 +72,36 @@ export function validateOrder(input:any) {
  const subtotal=items.reduce((a,i)=>a+i.subtotal,0),total=subtotal+extra-discount;
  if(total<=0||total>100000000) throw Error('Total tagihan harus lebih dari nol dan maksimal Rp100 juta.');
  const paid=amount(input.paid??0);
- if(paid>0&&!METHODS.includes(input.method)) throw Error('Pilih metode pembayaran.');
- const due=new Date(input.due);
+ if(paid>0&&(typeof input.method!=='string'||!METHODS.includes(input.method))) throw Error('Pilih metode pembayaran.');
+ const due=new Date(input.due as string|number);
  if(!Number.isFinite(due.getTime())||due.getTime()<Date.now()-60000) throw Error('Estimasi selesai harus setelah waktu sekarang.');
  const packages=Number(input.packages??1);
  if(!Number.isInteger(packages)||packages<1||packages>100) throw Error('Jumlah paket harus 1–100.');
- return {customer:input.customer.trim(),phone,items,total,extra,discount,paid,method:input.method,due:due.toISOString(),packages,notes:String(input.notes??'').slice(0,500)};
+ return {customer:input.customer.trim(),phone,items,total,extra,discount,paid,method:input.method as string,due:due.toISOString(),packages,notes:String(input.notes??'').slice(0,500)};
 }
 export function amount(value:unknown){const n=Number(value);if(!Number.isSafeInteger(n)||n<0||n>100000000)throw Error('Nominal harus bilangan rupiah utuh antara 0 dan Rp100 juta.');return n;}
-export function editOrderDetails(input: any, originalItems: Item[]) {
- const validMoney = (value: unknown) => {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0 || number > 100000000 || Math.abs(number*100-Math.round(number*100))>0.00001) {
-   throw Error('Isi nominal yang valid dengan maksimal dua angka desimal.');
-  }
-  return number;
- };
+export function editOrderDetails(input: EditInput, originalItems: Item[]) {
  if (!Array.isArray(input.items) || !input.items.length || input.items.length > 20) throw Error('Isi 1–20 layanan.');
  const used = new Set<number>();
- const items: Item[] = input.items.map((line: any) => {
-  const index = line?.originalIndex;
-  const original = originalItems[index];
+ const items: Item[] = input.items.map((line: EditLine) => {
+  const index = line?.originalIndex as number | undefined;
+  const original = index === undefined ? undefined : originalItems[index];
   if (index !== undefined && (!Number.isInteger(index) || !original || used.has(index))) throw Error('Rincian layanan tidak valid.');
-  if (original) used.add(index);
+  if (original && index !== undefined) used.add(index);
   const name = typeof line?.name === 'string' ? line.name.trim() : '';
   const unit = line?.unit;
   const quantity = Number(line?.quantity);
-  const price = validMoney(line?.price);
+  const price = amount(line?.price);
   if (!name || name.length > 100 || typeof unit !== 'string' || !unit.trim() || unit.length > 20 ||
       !Number.isFinite(quantity) || quantity <= 0 || quantity > 1000 ||
       Math.abs(quantity*1000-Math.round(quantity*1000))>0.00001) throw Error('Isi nama, satuan, dan jumlah layanan yang valid.');
   const subtotal = original && original.quantity === quantity && original.price === price
-   ? original.subtotal : Math.round(quantity*price*100)/100;
+   ? original.subtotal : Math.round(quantity*price);
   return {serviceId: original?.serviceId ?? CUSTOM_SERVICE_ID, name, unit: unit.trim(), quantity, price, subtotal};
  });
- const extra = validMoney(input.extra);
- const discount = validMoney(input.discount);
- const total = Math.round((items.reduce((sum,item)=>sum+item.subtotal,0)+extra-discount)*100)/100;
+ const extra = amount(input.extra);
+ const discount = amount(input.discount);
+ const total = items.reduce((sum,item)=>sum+item.subtotal,0)+extra-discount;
  if (total <= 0 || total > 100000000) throw Error('Total tagihan harus lebih dari nol dan maksimal Rp100 juta.');
  return {items, extra, discount, total, notes: String(input.notes??'').slice(0,500)};
 }

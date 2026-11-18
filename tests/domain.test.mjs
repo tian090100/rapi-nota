@@ -6,8 +6,11 @@ test('mixed services, fractional kg, discount, and deposit are calculated server
  const o=validateOrder({...input(),total:1,items:[{serviceId:'wash',quantity:4.5,price:1},{serviceId:'bed',quantity:1,price:1}]});
  assert.equal(o.total,43250);assert.equal(o.paid,10000);assert.equal(o.phone,'6281234567890');assert.equal(o.items[0].price,6500);
 });
-test('rejects overpayment, fractional pieces, negative values, NaN, and invalid dates',()=>{
- assert.throws(()=>validateOrder({...input(),paid:999999}));
+test('accepts overpayment as change/deposit while rejecting invalid amounts',()=>{
+ // Overpayment is valid: recordPayment() clamps to `remaining` and the excess
+ // becomes change or a saved deposit, so validation keeps the entered amount.
+ const over=validateOrder({...input(),paid:999999});
+ assert.equal(over.paid,999999);assert.equal(over.total,43250);
  assert.throws(()=>validateOrder({...input(),items:[{serviceId:'bed',quantity:1.5}]}));
  assert.throws(()=>validateOrder({...input(),items:[{serviceId:'wash',quantity:-1}]}));
  assert.throws(()=>validateOrder({...input(),discount:100000}));
@@ -19,6 +22,15 @@ test('ironing only skips washing and drying, while mixed orders follow full prod
  assert.equal(nextStatus({items:[{serviceId:'wash'},{serviceId:'iron'}],status:'Diterima'}),'Dicuci');
  assert.equal(nextStatus({items:[{serviceId:'wash'}],status:'Siap Diambil'}),'Selesai');
  assert.equal(nextStatus({items:[{serviceId:'wash'}],status:'Selesai'}),undefined);
+});
+
+test('editing an order keeps whole-rupiah totals consistent with create', async()=>{
+ const { editOrderDetails } = await import('../lib/domain.ts');
+ const original=[{serviceId:'wash',name:'Cuci + Setrika Wangi',unit:'kg',quantity:4.5,price:6500,subtotal:29250}];
+ const edited=editOrderDetails({items:[{originalIndex:0,name:'Cuci + Setrika Wangi',unit:'kg',quantity:5.185,price:6500}],extra:'3000',discount:'1000',notes:''},original);
+ assert.equal(edited.items[0].subtotal,33703); // 5.185 × 6500 = 33.702,5 → 33.703
+ assert.equal(edited.total,35703);
+ assert.throws(()=>editOrderDetails({items:[{originalIndex:0,name:'Cuci',unit:'kg',quantity:1,price:6500.5}],extra:0,discount:0,notes:''},original));
 });
 
 test('photo menu has 7 categories and 24 variants with exact express prices', async()=>{

@@ -4,7 +4,7 @@ import { randomHex,hashPassword,PASSWORD_ITERATIONS } from '@/lib/password';
 export async function POST(request:Request){
  if(!sameOrigin(request))return authJSON({error:'Permintaan tidak diizinkan.'},403);
  const user=await getSession();if(!user)return authJSON({error:'Silakan masuk terlebih dahulu.'},401);
- try{const b:any=await request.json();if(typeof b.current!=='string'||b.current.length>256||typeof b.next!=='string'||b.next.length<8||b.next.length>128)return authJSON({error:'Password baru minimal 8 dan maksimal 128 karakter.'},400);
+ try{const b=await request.json() as {current?:unknown;next?:unknown};if(typeof b.current!=='string'||b.current.length>256||typeof b.next!=='string'||b.next.length<8||b.next.length>128)return authJSON({error:'Password baru minimal 8 dan maksimal 128 karakter.'},400);
   if(!await consumeLoginAttempt(user.email,request.headers.get('cf-connecting-ip')??'local'))return authJSON({error:'Terlalu banyak percobaan. Coba lagi dalam 15 menit.'},429);
   if(!await verifyAccount(user.email,b.current))return authJSON({error:'Password saat ini tidak sesuai.'},400);
   const salt=randomHex(),hash=await hashPassword(b.next,salt);

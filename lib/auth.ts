@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { cookies } from 'next/headers';
 import { digest, randomHex, hashPassword, constantTimeEqual, PASSWORD_ITERATIONS } from './password';
 export type AppUser={id:string;name:string;email:string;role:'owner'|'employee'};
+type UserRow={id:string;name:string;email:string;role:string;password_hash:string;salt:string;iterations:number};
 export const SESSION_COOKIE='rapinota_session';
 export const SESSION_SECONDS=43200;
 export async function getSession():Promise<AppUser|null>{
@@ -28,13 +29,13 @@ export async function consumeLoginAttempt(email:string,ip:string){
  const now=Date.now(),reset=now+15*60000;
  const keys=await Promise.all(['email:'+email,'ip:'+ip].map(digest));
  const results=await env.DB!.batch(keys.map(key=>env.DB!.prepare('INSERT INTO auth_attempts (key,attempts,reset_at) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN reset_at<=? THEN 1 ELSE attempts+1 END,reset_at=CASE WHEN reset_at<=? THEN ? ELSE reset_at END RETURNING attempts').bind(key,reset,now,now,reset)));
- return Number((results[0].results[0] as any)?.attempts)<=10&&Number((results[1].results[0] as any)?.attempts)<=40;
+ return Number((results[0].results[0] as {attempts?:number})?.attempts)<=10&&Number((results[1].results[0] as {attempts?:number})?.attempts)<=40;
 }
 export async function verifyAccount(email:string,password:string){
- const row=await env.DB!.prepare('SELECT * FROM app_users WHERE email=? AND active=1').bind(email).first<any>();
+ const row=await env.DB!.prepare('SELECT * FROM app_users WHERE email=? AND active=1').bind(email).first<UserRow>();
  // The dummy hash keeps nonexistent accounts on the same expensive path.
  const actual=await hashPassword(password,row?.salt??'00'.repeat(32),row?.iterations??PASSWORD_ITERATIONS);
  if(!row||!constantTimeEqual(actual,row.password_hash))return null;
- return {id:row.id,name:row.name,email:row.email,role:row.role} as AppUser;
+ return {id:row.id,name:row.name,email:row.email,role:row.role as AppUser['role']};
 }
 export async function createSession(user:AppUser){const token=randomHex();await env.DB!.prepare('INSERT INTO app_sessions (token_hash,user_id,expires,created) VALUES (?,?,?,?)').bind(await digest(token),user.id,Date.now()+SESSION_SECONDS*1000,Date.now()).run();return token;}
